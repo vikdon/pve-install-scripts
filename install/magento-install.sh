@@ -23,8 +23,8 @@ update_os
 # -------------------------
 MAGENTO_VERSION="${MAGENTO_VERSION:-2.4.7-p3}"
 MAGENTO_DIR="${MAGENTO_DIR:-/var/www/html/magento}"
-MAGENTO_BASE_URL="${MAGENTO_BASE_URL:-http://$(hostname -I | awk '{print $1}')/}"
-MAGENTO_BASE_URL_SECURE="${MAGENTO_BASE_URL_SECURE:-${MAGENTO_BASE_URL}}"
+MAGENTO_BASE_URL="${MAGENTO_BASE_URL:-https://$(hostname -I | awk '{print $1}')/}"
+MAGENTO_BASE_URL_SECURE="${MAGENTO_BASE_URL_SECURE:-https://$(hostname -I | awk '{print $1}')/}"
 MAGENTO_REPO_PUBLIC_KEY="${MAGENTO_REPO_PUBLIC_KEY:-}"
 MAGENTO_REPO_PRIVATE_KEY="${MAGENTO_REPO_PRIVATE_KEY:-}"
 MAGENTO_ADMIN_FIRSTNAME="${MAGENTO_ADMIN_FIRSTNAME:-Admin}"
@@ -61,6 +61,11 @@ generate_random_password() {
   echo "${pass}"
 }
 
+is_valid_password() {
+  local pwd="$1"
+  [[ ${#pwd} -ge 8 && "$pwd" =~ [A-Za-z] && "$pwd" =~ [0-9] ]]
+}
+
 prompt_with_default() {
   local prompt="$1"
   local default="$2"
@@ -86,6 +91,25 @@ prompt_secret_with_default() {
   printf -v "${var_name}" "%s" "${input}"
 }
 
+prompt_password_with_policy() {
+  local prompt="$1"
+  local default="$2"
+  local var_name="$3"
+  local input=""
+  while true; do
+    read -rsp "$(printf "%s [%s]: " "$prompt" "$default")" input || true
+    echo
+    if [[ -z "${input}" ]]; then
+      input="$default"
+    fi
+    if is_valid_password "${input}"; then
+      printf -v "${var_name}" "%s" "${input}"
+      break
+    fi
+    echo "Password must be at least 8 characters long and contain letters plus digits. Please try again." >&2
+  done
+}
+
 normalize_url() {
   local url="$1"
   [[ -z "${url}" ]] && echo "" && return
@@ -95,30 +119,102 @@ normalize_url() {
   echo "${url}"
 }
 
+is_valid_https_domain_url() {
+  local url="$1"
+  [[ -z "${url}" ]] && return 1
+  [[ "${url}" =~ ^https:// ]] || return 1
+  local rest="${url#https://}"
+  local host="${rest%%/*}"
+  [[ -z "${host}" ]] && return 1
+  [[ "${host}" =~ [^A-Za-z0-9.-] ]] && return 1
+  [[ "${host}" == *".."* ]] && return 1
+  return 0
+}
+
+prompt_https_url() {
+  local prompt="$1"
+  local default="$2"
+  local var_name="$3"
+  local input=""
+  while true; do
+    read -rp "$(printf "%s [%s]: " "$prompt" "$default")" input || true
+    if [[ -z "${input}" ]]; then
+      input="$default"
+    fi
+    input="$(normalize_url "${input}")"
+    if is_valid_https_domain_url "${input}"; then
+      printf -v "${var_name}" "%s" "${input}"
+      break
+    fi
+    echo "Secure Base URL must be HTTPS and use a domain name (for example: https://shop.example.com/)." >&2
+  done
+}
+
+is_valid_timezone() {
+  local tz="$1"
+  [[ -z "${tz}" ]] && return 1
+  if command -v timedatectl >/dev/null 2>&1; then
+    if timedatectl list-timezones 2>/dev/null | grep -Fxq "${tz}"; then
+      return 0
+    fi
+  fi
+  [[ -f "/usr/share/zoneinfo/${tz}" ]]
+}
+
+prompt_timezone() {
+  local prompt="$1"
+  local default="$2"
+  local var_name="$3"
+  local input=""
+  while true; do
+    read -rp "$(printf "%s [%s]: " "$prompt" "$default")" input || true
+    if [[ -z "${input}" ]]; then
+      input="$default"
+    fi
+    if is_valid_timezone "${input}"; then
+      printf -v "${var_name}" "%s" "${input}"
+      break
+    fi
+    echo "Invalid timezone. Run 'bin/magento info:timezone:list' for valid identifiers (e.g. Europe/Warsaw, UTC)." >&2
+  done
+}
+
 collect_magento_install_preferences() {
   MAGENTO_BASE_URL="$(normalize_url "${MAGENTO_BASE_URL}")"
-  MAGENTO_BASE_URL_SECURE="$(normalize_url "${MAGENTO_BASE_URL_SECURE:-${MAGENTO_BASE_URL}}")"
+  MAGENTO_BASE_URL_SECURE="$(normalize_url "${MAGENTO_BASE_URL_SECURE}")"
   MAGENTO_SEARCH_ENGINE="${MAGENTO_SEARCH_ENGINE,,}"
   if [[ -z "${MAGENTO_ADMIN_PASSWORD}" ]]; then
     MAGENTO_ADMIN_PASSWORD="$(generate_random_password 16)"
   fi
 
   if [[ ! -t 0 ]]; then
+    if ! is_valid_https_domain_url "${MAGENTO_BASE_URL_SECURE}"; then
+      msg_error "MAGENTO_BASE_URL_SECURE must be an HTTPS URL with a domain name (e.g. https://shop.example.com/)."
+      exit 1
+    fi
+    if ! is_valid_timezone "${MAGENTO_TIMEZONE}"; then
+      msg_warn "Invalid MAGENTO_TIMEZONE '${MAGENTO_TIMEZONE}', defaulting to UTC."
+      MAGENTO_TIMEZONE="UTC"
+    fi
+    if ! is_valid_password "${MAGENTO_ADMIN_PASSWORD}"; then
+      msg_warn "Provided admin password does not meet Magento complexity requirements. Generating a new one."
+      MAGENTO_ADMIN_PASSWORD="$(generate_random_password 16)"
+    fi
     return
   fi
 
   echo -e "\n${INFO}${YW} Magento configuration:${CL}"
   prompt_with_default "Preferred Base URL" "${MAGENTO_BASE_URL}" MAGENTO_BASE_URL
-  prompt_with_default "Secure Base URL" "${MAGENTO_BASE_URL_SECURE}" MAGENTO_BASE_URL_SECURE
+  prompt_https_url "Secure Base URL (must be HTTPS with a domain)" "${MAGENTO_BASE_URL_SECURE}" MAGENTO_BASE_URL_SECURE
   prompt_with_default "Admin email" "${MAGENTO_ADMIN_EMAIL}" MAGENTO_ADMIN_EMAIL
   prompt_with_default "Admin first name" "${MAGENTO_ADMIN_FIRSTNAME}" MAGENTO_ADMIN_FIRSTNAME
   prompt_with_default "Admin last name" "${MAGENTO_ADMIN_LASTNAME}" MAGENTO_ADMIN_LASTNAME
   prompt_with_default "Admin username" "${MAGENTO_ADMIN_USER}" MAGENTO_ADMIN_USER
-  prompt_secret_with_default "Admin password" "${MAGENTO_ADMIN_PASSWORD}" MAGENTO_ADMIN_PASSWORD
+  prompt_password_with_policy "Admin password (letters + digits, min 8 chars)" "${MAGENTO_ADMIN_PASSWORD}" MAGENTO_ADMIN_PASSWORD
   prompt_with_default "Backend frontname" "${MAGENTO_BACKEND_FRONTNAME}" MAGENTO_BACKEND_FRONTNAME
   prompt_with_default "Language (locale)" "${MAGENTO_LANGUAGE}" MAGENTO_LANGUAGE
   prompt_with_default "Currency" "${MAGENTO_CURRENCY}" MAGENTO_CURRENCY
-  prompt_with_default "Timezone" "${MAGENTO_TIMEZONE}" MAGENTO_TIMEZONE
+  prompt_timezone "Timezone" "${MAGENTO_TIMEZONE}" MAGENTO_TIMEZONE
   prompt_with_default "Search engine (opensearch/elasticsearch7)" "${MAGENTO_SEARCH_ENGINE}" MAGENTO_SEARCH_ENGINE
   prompt_with_default "Search host" "${MAGENTO_SEARCH_HOST}" MAGENTO_SEARCH_HOST
   prompt_with_default "Search port" "${MAGENTO_SEARCH_PORT}" MAGENTO_SEARCH_PORT

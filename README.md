@@ -29,5 +29,6 @@ bash -c "$(curl -fsSL https://raw.githubusercontent.com/vikdon/pve-install-scrip
 - Automatic `bin/magento setup:install` run; storefront/admin URLs and credentials saved in `/root/.magento_admin_credentials`
 - Magento Marketplace access keys required (follow the [official Adobe Commerce installation guide](https://experienceleague.adobe.com/en/docs/commerce-operations/installation-guide/overview#); generate keys via [Marketplace Access Keys](https://commercemarketplace.adobe.com/customer/accessKeys/))
 - External OpenSearch/Elasticsearch cluster required; provide its host/port during installation so Magento can index search data
+- Magento CLI requirements: admin password must contain letters and digits, secure base URL defaults to HTTPS with the container IP (replace with your public domain for production), and timezone must match the identifiers listed by `bin/magento info:timezone:list`
 
 > Ensure your user has permission to create LXC containers and that Proxmox VE runs a supported version before executing the scripts.
