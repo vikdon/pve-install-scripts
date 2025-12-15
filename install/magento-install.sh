@@ -223,6 +223,8 @@ run_magento_cli_install() {
     disable_modules_args=(--disable-modules="${MAGENTO_DISABLE_MODULES}")
   fi
   pushd "${MAGENTO_DIR}" >/dev/null
+  chown -R www-data:www-data .
+  chmod +x bin/magento
   if ! bin/magento setup:install \
     --base-url="${MAGENTO_BASE_URL}" \
     --base-url-secure="${MAGENTO_BASE_URL_SECURE}" \
