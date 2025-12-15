@@ -188,7 +188,8 @@ ensure_mariadb_repo() {
   fi
   msg_info "Configuring MariaDB ${target} repository"
   local repo_script="/tmp/mariadb_repo_setup.sh"
-  if ! curl -fsSL -o "${repo_script}" "https://r.mariadb.com/downloads/mariadb_repo_setup"; then
+  local repo_url="https://downloads.mariadb.com/MariaDB/mariadb_repo_setup"
+  if ! curl -fsSL -o "${repo_script}" "${repo_url}"; then
     msg_error "Failed to download MariaDB repo setup script"
     exit 1
   fi
