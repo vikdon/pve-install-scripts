@@ -187,7 +187,17 @@ ensure_mariadb_repo() {
     return
   fi
   msg_info "Configuring MariaDB ${target} repository"
-  curl -sS https://r.mariadb.com/downloads/mariadb_repo_setup | bash -s -- --mariadb-server-version="${target}" >/dev/null
+  local repo_script="/tmp/mariadb_repo_setup.sh"
+  if ! curl -fsSL -o "${repo_script}" "https://r.mariadb.com/downloads/mariadb_repo_setup"; then
+    msg_error "Failed to download MariaDB repo setup script"
+    exit 1
+  fi
+  chmod +x "${repo_script}"
+  if ! "${repo_script}" --mariadb-server-version="${target}" >/dev/null; then
+    msg_error "MariaDB repo setup script failed"
+    exit 1
+  fi
+  rm -f "${repo_script}"
   $STD apt-get update
   msg_ok "MariaDB ${target} repository configured"
 }
