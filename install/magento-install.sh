@@ -58,17 +58,30 @@ setup_php
 msg_ok "PHP/Apache stack installed"
 
 msg_info "Installing Magento PHP extensions"
-$STD apt-get install -y \
-  "php${PHP_VERSION}-bcmath" \
-  "php${PHP_VERSION}-curl" \
-  "php${PHP_VERSION}-gd" \
-  "php${PHP_VERSION}-intl" \
-  "php${PHP_VERSION}-mbstring" \
-  "php${PHP_VERSION}-soap" \
-  "php${PHP_VERSION}-xml" \
-  "php${PHP_VERSION}-xsl" \
-  "php${PHP_VERSION}-zip" \
-  "php${PHP_VERSION}-sodium"
+PHP_EXT_PACKAGES=(
+  "php${PHP_VERSION}-bcmath"
+  "php${PHP_VERSION}-curl"
+  "php${PHP_VERSION}-gd"
+  "php${PHP_VERSION}-intl"
+  "php${PHP_VERSION}-mbstring"
+  "php${PHP_VERSION}-soap"
+  "php${PHP_VERSION}-xml"
+  "php${PHP_VERSION}-xsl"
+  "php${PHP_VERSION}-zip"
+)
+PHP_SODIUM_PKG="php${PHP_VERSION}-sodium"
+if ! apt-cache show "${PHP_SODIUM_PKG}" >/dev/null 2>&1; then
+  if apt-cache show php-sodium >/dev/null 2>&1; then
+    PHP_SODIUM_PKG="php-sodium"
+  else
+    PHP_SODIUM_PKG=""
+    msg_warn "libsodium extension package not found for PHP ${PHP_VERSION}; skipping"
+  fi
+fi
+if [[ -n "${PHP_SODIUM_PKG}" ]]; then
+  PHP_EXT_PACKAGES+=("${PHP_SODIUM_PKG}")
+fi
+$STD apt-get install -y "${PHP_EXT_PACKAGES[@]}"
 msg_ok "PHP extensions installed"
 
 msg_info "Installing MariaDB"
