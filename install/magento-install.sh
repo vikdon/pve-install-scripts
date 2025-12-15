@@ -23,10 +23,11 @@ update_os
 # -------------------------
 MAGENTO_VERSION="${MAGENTO_VERSION:-2.4.7-p3}"
 MAGENTO_DIR="${MAGENTO_DIR:-/var/www/html/magento}"
-MAGENTO_BASE_URL="${MAGENTO_BASE_URL:-https://$(hostname -I | awk '{print $1}')/}"
+MAGENTO_BASE_URL="${MAGENTO_BASE_URL:-http://$(hostname -I | awk '{print $1}')/}"
 MAGENTO_BASE_URL_SECURE="${MAGENTO_BASE_URL_SECURE:-https://$(hostname -I | awk '{print $1}')/}"
 MAGENTO_REPO_PUBLIC_KEY="${MAGENTO_REPO_PUBLIC_KEY:-}"
 MAGENTO_REPO_PRIVATE_KEY="${MAGENTO_REPO_PRIVATE_KEY:-}"
+MARIADB_TARGET_VERSION="${MARIADB_TARGET_VERSION:-10.6}"
 MAGENTO_ADMIN_FIRSTNAME="${MAGENTO_ADMIN_FIRSTNAME:-Admin}"
 MAGENTO_ADMIN_LASTNAME="${MAGENTO_ADMIN_LASTNAME:-User}"
 MAGENTO_ADMIN_EMAIL="${MAGENTO_ADMIN_EMAIL:-admin@example.com}"
@@ -177,6 +178,18 @@ prompt_timezone() {
     fi
     echo "Invalid timezone. Run 'bin/magento info:timezone:list' for valid identifiers (e.g. Europe/Warsaw, UTC)." >&2
   done
+}
+
+ensure_mariadb_repo() {
+  local target="${MARIADB_TARGET_VERSION}"
+  [[ -z "${target}" ]] && return
+  if apt-cache policy mariadb-server 2>/dev/null | grep -Eq "${target//./\\.}"; then
+    return
+  fi
+  msg_info "Configuring MariaDB ${target} repository"
+  curl -sS https://r.mariadb.com/downloads/mariadb_repo_setup | bash -s -- --mariadb-server-version="${target}" >/dev/null
+  $STD apt-get update
+  msg_ok "MariaDB ${target} repository configured"
 }
 
 collect_magento_install_preferences() {
@@ -411,6 +424,7 @@ fi
 $STD apt-get install -y "${PHP_EXT_PACKAGES[@]}"
 msg_ok "PHP extensions installed"
 
+ensure_mariadb_repo
 msg_info "Installing MariaDB"
 setup_mariadb
 MARIADB_DB_NAME="${MARIADB_DB_NAME}" MARIADB_DB_USER="${MARIADB_DB_USER}" setup_mariadb_db
