@@ -24,8 +24,218 @@ update_os
 MAGENTO_VERSION="${MAGENTO_VERSION:-2.4.7-p3}"
 MAGENTO_DIR="${MAGENTO_DIR:-/var/www/html/magento}"
 MAGENTO_BASE_URL="${MAGENTO_BASE_URL:-http://$(hostname -I | awk '{print $1}')/}"
+MAGENTO_BASE_URL_SECURE="${MAGENTO_BASE_URL_SECURE:-${MAGENTO_BASE_URL}}"
 MAGENTO_REPO_PUBLIC_KEY="${MAGENTO_REPO_PUBLIC_KEY:-}"
 MAGENTO_REPO_PRIVATE_KEY="${MAGENTO_REPO_PRIVATE_KEY:-}"
+MAGENTO_ADMIN_FIRSTNAME="${MAGENTO_ADMIN_FIRSTNAME:-Admin}"
+MAGENTO_ADMIN_LASTNAME="${MAGENTO_ADMIN_LASTNAME:-User}"
+MAGENTO_ADMIN_EMAIL="${MAGENTO_ADMIN_EMAIL:-admin@example.com}"
+MAGENTO_ADMIN_USER="${MAGENTO_ADMIN_USER:-admin}"
+MAGENTO_ADMIN_PASSWORD="${MAGENTO_ADMIN_PASSWORD:-$(LC_ALL=C tr -dc 'A-Za-z0-9' </dev/urandom | head -c 16)}"
+MAGENTO_BACKEND_FRONTNAME="${MAGENTO_BACKEND_FRONTNAME:-admin}"
+MAGENTO_LANGUAGE="${MAGENTO_LANGUAGE:-en_US}"
+MAGENTO_CURRENCY="${MAGENTO_CURRENCY:-USD}"
+MAGENTO_TIMEZONE="${MAGENTO_TIMEZONE:-UTC}"
+MAGENTO_USE_SECURE="${MAGENTO_USE_SECURE:-0}"
+MAGENTO_USE_SECURE_ADMIN="${MAGENTO_USE_SECURE_ADMIN:-0}"
+MAGENTO_SEARCH_ENGINE="${MAGENTO_SEARCH_ENGINE:-opensearch}"
+MAGENTO_SEARCH_HOST="${MAGENTO_SEARCH_HOST:-localhost}"
+MAGENTO_SEARCH_PORT="${MAGENTO_SEARCH_PORT:-9200}"
+MAGENTO_SEARCH_INDEX_PREFIX="${MAGENTO_SEARCH_INDEX_PREFIX:-magento}"
+MAGENTO_DISABLE_MODULES="${MAGENTO_DISABLE_MODULES:-Magento_TwoFactorAuth}"
+MAGENTO_SALES_ORDER_PREFIX="${MAGENTO_SALES_ORDER_PREFIX:-ORD}"
+
+prompt_with_default() {
+  local prompt="$1"
+  local default="$2"
+  local var_name="$3"
+  local input=""
+  read -rp "$(printf "%s [%s]: " "$prompt" "$default")" input || true
+  if [[ -z "${input}" ]]; then
+    input="$default"
+  fi
+  printf -v "${var_name}" "%s" "${input}"
+}
+
+prompt_secret_with_default() {
+  local prompt="$1"
+  local default="$2"
+  local var_name="$3"
+  local input=""
+  read -rsp "$(printf "%s [%s]: " "$prompt" "$default")" input || true
+  echo
+  if [[ -z "${input}" ]]; then
+    input="$default"
+  fi
+  printf -v "${var_name}" "%s" "${input}"
+}
+
+normalize_url() {
+  local url="$1"
+  [[ -z "${url}" ]] && echo "" && return
+  if [[ "${url}" != *"/" ]]; then
+    url="${url}/"
+  fi
+  echo "${url}"
+}
+
+collect_magento_install_preferences() {
+  MAGENTO_BASE_URL="$(normalize_url "${MAGENTO_BASE_URL}")"
+  MAGENTO_BASE_URL_SECURE="$(normalize_url "${MAGENTO_BASE_URL_SECURE:-${MAGENTO_BASE_URL}}")"
+  MAGENTO_SEARCH_ENGINE="${MAGENTO_SEARCH_ENGINE,,}"
+
+  if [[ ! -t 0 ]]; then
+    return
+  fi
+
+  echo -e "\n${INFO}${YW} Magento configuration:${CL}"
+  prompt_with_default "Preferred Base URL" "${MAGENTO_BASE_URL}" MAGENTO_BASE_URL
+  prompt_with_default "Secure Base URL" "${MAGENTO_BASE_URL_SECURE}" MAGENTO_BASE_URL_SECURE
+  prompt_with_default "Admin email" "${MAGENTO_ADMIN_EMAIL}" MAGENTO_ADMIN_EMAIL
+  prompt_with_default "Admin first name" "${MAGENTO_ADMIN_FIRSTNAME}" MAGENTO_ADMIN_FIRSTNAME
+  prompt_with_default "Admin last name" "${MAGENTO_ADMIN_LASTNAME}" MAGENTO_ADMIN_LASTNAME
+  prompt_with_default "Admin username" "${MAGENTO_ADMIN_USER}" MAGENTO_ADMIN_USER
+  prompt_secret_with_default "Admin password" "${MAGENTO_ADMIN_PASSWORD}" MAGENTO_ADMIN_PASSWORD
+  prompt_with_default "Backend frontname" "${MAGENTO_BACKEND_FRONTNAME}" MAGENTO_BACKEND_FRONTNAME
+  prompt_with_default "Language (locale)" "${MAGENTO_LANGUAGE}" MAGENTO_LANGUAGE
+  prompt_with_default "Currency" "${MAGENTO_CURRENCY}" MAGENTO_CURRENCY
+  prompt_with_default "Timezone" "${MAGENTO_TIMEZONE}" MAGENTO_TIMEZONE
+  prompt_with_default "Search engine (opensearch/elasticsearch7)" "${MAGENTO_SEARCH_ENGINE}" MAGENTO_SEARCH_ENGINE
+  prompt_with_default "Search host" "${MAGENTO_SEARCH_HOST}" MAGENTO_SEARCH_HOST
+  prompt_with_default "Search port" "${MAGENTO_SEARCH_PORT}" MAGENTO_SEARCH_PORT
+  prompt_with_default "Search index prefix" "${MAGENTO_SEARCH_INDEX_PREFIX}" MAGENTO_SEARCH_INDEX_PREFIX
+
+  MAGENTO_BASE_URL="$(normalize_url "${MAGENTO_BASE_URL}")"
+  MAGENTO_BASE_URL_SECURE="$(normalize_url "${MAGENTO_BASE_URL_SECURE}")"
+  MAGENTO_SEARCH_ENGINE="${MAGENTO_SEARCH_ENGINE,,}"
+}
+
+ensure_magento_repo_keys() {
+  if [[ -z "${MAGENTO_REPO_PUBLIC_KEY:-}" || -z "${MAGENTO_REPO_PRIVATE_KEY:-}" ]]; then
+    if [[ ! -t 0 ]]; then
+      msg_error "Magento repo keys missing. Set MAGENTO_REPO_PUBLIC_KEY and MAGENTO_REPO_PRIVATE_KEY environment variables."
+      exit 1
+    fi
+  fi
+  local input=""
+  while [[ -z "${MAGENTO_REPO_PUBLIC_KEY:-}" ]]; do
+    read -rp "Enter Magento repo public key: " input || true
+    MAGENTO_REPO_PUBLIC_KEY="$(printf '%s' "${input}" | tr -d '\r\n')"
+  done
+  while [[ -z "${MAGENTO_REPO_PRIVATE_KEY:-}" ]]; do
+    read -rsp "Enter Magento repo private key: " input || true
+    echo
+    MAGENTO_REPO_PRIVATE_KEY="$(printf '%s' "${input}" | tr -d '\r\n')"
+  done
+}
+
+configure_composer_auth() {
+  export COMPOSER_ALLOW_SUPERUSER=1
+  export COMPOSER_MEMORY_LIMIT=-1
+  export COMPOSER_HOME="${COMPOSER_HOME:-/root/.config/composer}"
+  mkdir -p "${COMPOSER_HOME}"
+  cat >"${COMPOSER_HOME}/auth.json" <<EOF
+{
+  "http-basic": {
+    "repo.magento.com": {
+      "username": "${MAGENTO_REPO_PUBLIC_KEY}",
+      "password": "${MAGENTO_REPO_PRIVATE_KEY}"
+    }
+  }
+}
+EOF
+  chmod 600 "${COMPOSER_HOME}/auth.json"
+}
+
+install_magento_via_composer() {
+  ensure_magento_repo_keys
+  configure_composer_auth
+  msg_info "Downloading Magento v${MAGENTO_VERSION} via Composer"
+  COMPOSER_ALLOW_SUPERUSER=1 composer create-project \
+    --repository-url=https://repo.magento.com/ \
+    magento/project-community-edition="${MAGENTO_VERSION}" \
+    "${MAGENTO_DIR}"
+  msg_ok "Magento downloaded"
+}
+
+build_search_args() {
+  SEARCH_ARGS=()
+  case "${MAGENTO_SEARCH_ENGINE}" in
+  opensearch)
+    SEARCH_ARGS=(
+      --search-engine=opensearch
+      --opensearch-host="${MAGENTO_SEARCH_HOST}"
+      --opensearch-port="${MAGENTO_SEARCH_PORT}"
+      --opensearch-index-prefix="${MAGENTO_SEARCH_INDEX_PREFIX}"
+    )
+    ;;
+  elasticsearch7 | elasticsearch8)
+    SEARCH_ARGS=(
+      --search-engine="${MAGENTO_SEARCH_ENGINE}"
+      --elasticsearch-host="${MAGENTO_SEARCH_HOST}"
+      --elasticsearch-port="${MAGENTO_SEARCH_PORT}"
+      --elasticsearch-index-prefix="${MAGENTO_SEARCH_INDEX_PREFIX}"
+    )
+    ;;
+  *)
+    SEARCH_ARGS=(--search-engine="${MAGENTO_SEARCH_ENGINE}")
+    ;;
+  esac
+}
+
+write_admin_credentials_file() {
+  local trimmed_base="${MAGENTO_BASE_URL%/}"
+  local admin_url="${trimmed_base}/${MAGENTO_BACKEND_FRONTNAME}"
+  cat >/root/.magento_admin_credentials <<EOF
+Storefront URL: ${MAGENTO_BASE_URL}
+Admin URL: ${admin_url}
+Admin Email: ${MAGENTO_ADMIN_EMAIL}
+Admin User: ${MAGENTO_ADMIN_USER}
+Admin Password: ${MAGENTO_ADMIN_PASSWORD}
+EOF
+  chmod 600 /root/.magento_admin_credentials
+}
+
+run_magento_cli_install() {
+  msg_info "Running Magento CLI installer"
+  build_search_args
+  local disable_modules_args=()
+  if [[ -n "${MAGENTO_DISABLE_MODULES:-}" ]]; then
+    disable_modules_args=(--disable-modules="${MAGENTO_DISABLE_MODULES}")
+  fi
+  pushd "${MAGENTO_DIR}" >/dev/null
+  if ! bin/magento setup:install \
+    --base-url="${MAGENTO_BASE_URL}" \
+    --base-url-secure="${MAGENTO_BASE_URL_SECURE}" \
+    --db-host="localhost" \
+    --db-name="${MARIADB_DB_NAME}" \
+    --db-user="${MARIADB_DB_USER}" \
+    --db-password="${MARIADB_DB_PASS}" \
+    --backend-frontname="${MAGENTO_BACKEND_FRONTNAME}" \
+    --admin-firstname="${MAGENTO_ADMIN_FIRSTNAME}" \
+    --admin-lastname="${MAGENTO_ADMIN_LASTNAME}" \
+    --admin-email="${MAGENTO_ADMIN_EMAIL}" \
+    --admin-user="${MAGENTO_ADMIN_USER}" \
+    --admin-password="${MAGENTO_ADMIN_PASSWORD}" \
+    --language="${MAGENTO_LANGUAGE}" \
+    --currency="${MAGENTO_CURRENCY}" \
+    --timezone="${MAGENTO_TIMEZONE}" \
+    --use-rewrites=1 \
+    --use-secure="${MAGENTO_USE_SECURE}" \
+    --use-secure-admin="${MAGENTO_USE_SECURE_ADMIN}" \
+    --session-save=files \
+    --cleanup-database \
+    --sales-order-increment-prefix="${MAGENTO_SALES_ORDER_PREFIX}" \
+    "${disable_modules_args[@]}" \
+    "${SEARCH_ARGS[@]}"; then
+    popd >/dev/null
+    msg_error "Magento CLI installation failed"
+    exit 1
+  fi
+  popd >/dev/null
+  write_admin_credentials_file
+  msg_ok "Magento CLI install completed"
+}
 
 # PHP
 PHP_VERSION="${PHP_VERSION:-8.2}"
@@ -111,48 +321,8 @@ fi
 mkdir -p /var/www/html
 rm -rf "${MAGENTO_DIR}"
 
-NEEDS_COMPOSER_AUTH="no"
-if [[ -n "${MAGENTO_REPO_PUBLIC_KEY}" && -n "${MAGENTO_REPO_PRIVATE_KEY}" ]]; then
-  msg_info "Downloading Magento v${MAGENTO_VERSION} via Composer"
-  export COMPOSER_ALLOW_SUPERUSER=1
-  export COMPOSER_MEMORY_LIMIT=-1
-  export COMPOSER_HOME="${COMPOSER_HOME:-/root/.config/composer}"
-  mkdir -p "${COMPOSER_HOME}"
-  cat >"${COMPOSER_HOME}/auth.json" <<EOF
-{
-  "http-basic": {
-    "repo.magento.com": {
-      "username": "${MAGENTO_REPO_PUBLIC_KEY}",
-      "password": "${MAGENTO_REPO_PRIVATE_KEY}"
-    }
-  }
-}
-EOF
-  chmod 600 "${COMPOSER_HOME}/auth.json"
-  COMPOSER_ALLOW_SUPERUSER=1 composer create-project \
-    --repository-url=https://repo.magento.com/ \
-    magento/project-community-edition="${MAGENTO_VERSION}" \
-    "${MAGENTO_DIR}"
-  msg_ok "Magento downloaded"
-else
-  NEEDS_COMPOSER_AUTH="yes"
-  SRC_DIR="/var/www/html/magento-src"
-  rm -rf "${SRC_DIR}"
-  mkdir -p "${SRC_DIR}"
-  msg_info "Downloading Magento source v${MAGENTO_VERSION}"
-  cd "${SRC_DIR}"
-  curl -fsSL -o magento.zip "https://github.com/magento/magento2/archive/refs/tags/${MAGENTO_VERSION}.zip"
-  $STD unzip -q magento.zip
-  rm -f magento.zip
-  MAGENTO_SRC_PATH="${SRC_DIR}/magento2-${MAGENTO_VERSION}"
-  if [[ ! -d "${MAGENTO_SRC_PATH}" ]]; then
-    msg_error "Unexpected archive layout. Missing: ${MAGENTO_SRC_PATH}"
-    exit 1
-  fi
-  mkdir -p "${MAGENTO_DIR}"
-  cp -a "${MAGENTO_SRC_PATH}/." "${MAGENTO_DIR}/"
-  msg_ok "Magento source downloaded (Composer dependencies still required)"
-fi
+collect_magento_install_preferences
+install_magento_via_composer
 
 msg_info "Setting permissions"
 chown -R www-data:www-data "${MAGENTO_DIR}"
@@ -187,15 +357,18 @@ $STD a2dissite 000-default.conf
 systemctl reload apache2
 msg_ok "Apache configured"
 
+run_magento_cli_install
+
 motd_ssh
 customize
 cleanup_lxc
 
-if [[ "${NEEDS_COMPOSER_AUTH}" == "yes" ]]; then
-  echo -e "${INFO}${YW} Composer auth required:${CL} add repo.magento.com keys then run ${BGN}composer install${CL} inside ${BGN}${MAGENTO_DIR}${CL}"
-fi
-
-msg_ok "Magento base install files deployed"
-echo -e "${INFO}${YW} Next step:${CL} run ${BGN}bin/magento setup:install${CL} from ${BGN}${MAGENTO_DIR}${CL} with your desired base-url/admin credentials."
+msg_ok "Magento storefront ready"
+local_admin_url="${MAGENTO_BASE_URL%/}/${MAGENTO_BACKEND_FRONTNAME}"
+echo -e "${INFO}${YW} Storefront URL:${CL} ${BGN}${MAGENTO_BASE_URL}${CL}"
+echo -e "${INFO}${YW} Admin URL:${CL} ${BGN}${local_admin_url}${CL}"
+echo -e "${INFO}${YW} Admin user:${CL} ${BGN}${MAGENTO_ADMIN_USER}${CL}"
+echo -e "${INFO}${YW} Admin password:${CL} ${BGN}${MAGENTO_ADMIN_PASSWORD}${CL}"
+echo -e "${INFO}${YW} Admin email:${CL} ${BGN}${MAGENTO_ADMIN_EMAIL}${CL}"
+echo -e "${INFO}${YW} Credentials saved:${CL} ${BGN}/root/.magento_admin_credentials${CL}"
 echo -e "${INFO}${YW} DB credentials:${CL} saved in ${BGN}/root/.magento_db_credentials${CL}"
-echo -e "${INFO}${YW} Base URL suggestion:${CL} ${BGN}${MAGENTO_BASE_URL}${CL}"
