@@ -206,7 +206,7 @@ ensure_mariadb_repo() {
   if [[ "${os_id}" == "debian" && "${os_version}" =~ ^13 ]]; then
     os_version="12"
   fi
-  if ! "${repo_script}" --mariadb-server-version="${target}" --os="${os_id}" --os-version="${os_version}" >/dev/null; then
+  if ! "${repo_script}" --mariadb-server-version="${target}" --os-type="${os_id}" --os-version="${os_version}" >/dev/null; then
     msg_error "MariaDB repo setup script failed"
     exit 1
   fi
