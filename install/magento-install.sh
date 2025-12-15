@@ -27,7 +27,7 @@ MAGENTO_BASE_URL="${MAGENTO_BASE_URL:-http://$(hostname -I | awk '{print $1}')/}
 MAGENTO_BASE_URL_SECURE="${MAGENTO_BASE_URL_SECURE:-https://$(hostname -I | awk '{print $1}')/}"
 MAGENTO_REPO_PUBLIC_KEY="${MAGENTO_REPO_PUBLIC_KEY:-}"
 MAGENTO_REPO_PRIVATE_KEY="${MAGENTO_REPO_PRIVATE_KEY:-}"
-MARIADB_TARGET_VERSION="${MARIADB_TARGET_VERSION:-10.6}"
+MARIADB_TARGET_VERSION="${MARIADB_TARGET_VERSION:-10.6.24}"
 MAGENTO_ADMIN_FIRSTNAME="${MAGENTO_ADMIN_FIRSTNAME:-Admin}"
 MAGENTO_ADMIN_LASTNAME="${MAGENTO_ADMIN_LASTNAME:-User}"
 MAGENTO_ADMIN_EMAIL="${MAGENTO_ADMIN_EMAIL:-admin@example.com}"
@@ -194,7 +194,19 @@ ensure_mariadb_repo() {
     exit 1
   fi
   chmod +x "${repo_script}"
-  if ! "${repo_script}" --mariadb-server-version="${target}" >/dev/null; then
+  local os_id="debian"
+  local os_version="12"
+  if [[ -f /etc/os-release ]]; then
+    # shellcheck disable=SC1091
+    . /etc/os-release
+    os_id="${ID:-${os_id}}"
+    os_version="${VERSION_ID:-${os_version}}"
+  fi
+  # MariaDB repo setup does not yet support Debian 13; fall back to 12
+  if [[ "${os_id}" == "debian" && "${os_version}" =~ ^13 ]]; then
+    os_version="12"
+  fi
+  if ! "${repo_script}" --mariadb-server-version="${target}" --os="${os_id}" --os-version="${os_version}" >/dev/null; then
     msg_error "MariaDB repo setup script failed"
     exit 1
   fi
