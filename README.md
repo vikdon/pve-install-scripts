@@ -9,13 +9,13 @@ Run the scripts directly from GitHub by downloading them with `curl` and piping 
 ### OpenCart
 
 ```bash
-bash -c "$(curl -fsSL https://github.com/vikdon/pve-install-scripts/refs/heads/main/ct/opencart.sh)"
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/vikdon/pve-install-scripts/refs/heads/main/ct/opencart.sh)"
 ```
 
 ### Magento
 
 ```bash
-bash -c "$(curl -fsSL https://github.com/vikdon/pve-install-scripts/refs/heads/main/ct/magento.sh)"
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/vikdon/pve-install-scripts/refs/heads/main/ct/magento.sh)"
 ```
 
 > Ensure your user has permission to create LXC containers and that Proxmox VE runs a supported version before executing the scripts.
