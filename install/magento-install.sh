@@ -31,7 +31,7 @@ MAGENTO_ADMIN_FIRSTNAME="${MAGENTO_ADMIN_FIRSTNAME:-Admin}"
 MAGENTO_ADMIN_LASTNAME="${MAGENTO_ADMIN_LASTNAME:-User}"
 MAGENTO_ADMIN_EMAIL="${MAGENTO_ADMIN_EMAIL:-admin@example.com}"
 MAGENTO_ADMIN_USER="${MAGENTO_ADMIN_USER:-admin}"
-MAGENTO_ADMIN_PASSWORD="${MAGENTO_ADMIN_PASSWORD:-$(LC_ALL=C tr -dc 'A-Za-z0-9' </dev/urandom | head -c 16)}"
+MAGENTO_ADMIN_PASSWORD="${MAGENTO_ADMIN_PASSWORD:-}"
 MAGENTO_BACKEND_FRONTNAME="${MAGENTO_BACKEND_FRONTNAME:-admin}"
 MAGENTO_LANGUAGE="${MAGENTO_LANGUAGE:-en_US}"
 MAGENTO_CURRENCY="${MAGENTO_CURRENCY:-USD}"
@@ -44,6 +44,22 @@ MAGENTO_SEARCH_PORT="${MAGENTO_SEARCH_PORT:-9200}"
 MAGENTO_SEARCH_INDEX_PREFIX="${MAGENTO_SEARCH_INDEX_PREFIX:-magento}"
 MAGENTO_DISABLE_MODULES="${MAGENTO_DISABLE_MODULES:-Magento_TwoFactorAuth}"
 MAGENTO_SALES_ORDER_PREFIX="${MAGENTO_SALES_ORDER_PREFIX:-ORD}"
+
+generate_random_password() {
+  local length="${1:-16}"
+  local chars='abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
+  local pass=""
+  while ((${#pass} < length)); do
+    local rand
+    rand=$(od -An -N2 -tu2 /dev/urandom 2>/dev/null | tr -d ' ')
+    if [[ -z "${rand}" ]]; then
+      continue
+    fi
+    rand=$((rand % ${#chars}))
+    pass+="${chars:rand:1}"
+  done
+  echo "${pass}"
+}
 
 prompt_with_default() {
   local prompt="$1"
@@ -83,6 +99,9 @@ collect_magento_install_preferences() {
   MAGENTO_BASE_URL="$(normalize_url "${MAGENTO_BASE_URL}")"
   MAGENTO_BASE_URL_SECURE="$(normalize_url "${MAGENTO_BASE_URL_SECURE:-${MAGENTO_BASE_URL}}")"
   MAGENTO_SEARCH_ENGINE="${MAGENTO_SEARCH_ENGINE,,}"
+  if [[ -z "${MAGENTO_ADMIN_PASSWORD}" ]]; then
+    MAGENTO_ADMIN_PASSWORD="$(generate_random_password 16)"
+  fi
 
   if [[ ! -t 0 ]]; then
     return
