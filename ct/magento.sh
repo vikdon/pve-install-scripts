@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-source <(curl -fsSL https://github.com/vikdon/pve-install-scripts/refs/heads/main/misc/build.func)
+source <(curl -fsSL https://raw.githubusercontent.com/vikdon/pve-install-scripts/refs/heads/main/misc/build.func)
 # Magento LXC installer for Proxmox VE (community-scripts style)
 # Author: VikDon
 # License: MIT | https://github.com/community-scripts/ProxmoxVE/raw/main/LICENSE
